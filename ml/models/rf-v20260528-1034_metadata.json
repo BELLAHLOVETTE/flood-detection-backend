@@ -1,0 +1,30 @@
+{
+  "version": "rf-v20260528-1034",
+  "model_type": "random_forest",
+  "f1_score": 0.5231,
+  "auc_roc": 0.971,
+  "training_samples": 1463,
+  "test_samples": 366,
+  "flood_samples": 109,
+  "feature_names": [
+    "rainfall_1d",
+    "rainfall_7d",
+    "rainfall_30d",
+    "sar_ratio",
+    "water_area_km2",
+    "ndwi_mean",
+    "doy",
+    "doy_sin",
+    "doy_cos",
+    "rainfall_7d_ratio",
+    "water_anomaly"
+  ],
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 12,
+    "min_samples_leaf": 3,
+    "class_weight": "balanced"
+  },
+  "trained_at": "2026-05-28T10:34:54.961805",
+  "model_path": "C:\\Users\\SINGAH HI-TECH\\Final_year\\Flood-detection\\backend\\ml\\models\\rf-v20260528-1034.pkl"
+}

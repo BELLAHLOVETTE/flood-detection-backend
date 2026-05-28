@@ -15,7 +15,7 @@ import pickle
 from datetime import datetime
 
 import django
-import numpy as np
+from django.utils import timezone
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     classification_report,
@@ -154,7 +154,7 @@ def train(verbose: bool = True) -> dict:
     # ── 6. SAVE MODEL ────────────────────────────────────────────
     print('\n[6/7] Saving model...')
 
-    version    = f'rf-v{datetime.now().strftime("%Y%m%d-%H%M")}'
+    version    = f'rf-v{timezone.now().strftime("%Y%m%d-%H%M")}'
     model_path = os.path.join(MODELS_DIR, f'{version}.pkl')
 
     with open(model_path, 'wb') as f:
@@ -175,7 +175,7 @@ def train(verbose: bool = True) -> dict:
             'min_samples_leaf': 3,
             'class_weight':     'balanced',
         },
-        'trained_at':  datetime.now().isoformat(),
+        'trained_at':  timezone.now().isoformat(),
         'model_path':  model_path,
     }
 
@@ -205,7 +205,7 @@ def train(verbose: bool = True) -> dict:
         training_samples = len(X_train),
         feature_names    = FEATURE_NAMES,
         hyperparameters  = metadata['hyperparameters'],
-        trained_at       = datetime.now(),
+        trained_at       = timezone.now(),
     )
 
     print(f'   Model registered: {version} (active=True)')
