@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_spectacular',
+    'channels',
 
     # Celery apps (comment these out if migrate still fails)
     'django_celery_beat',
@@ -122,3 +123,13 @@ CELERY_TIMEZONE = 'Africa/Douala'
 
 # ML
 ML_MODELS_DIR = BASE_DIR / 'ml' / 'models'
+
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [env('REDIS_URL', default='redis://localhost:6379/0')],
+        },
+    }
+}
