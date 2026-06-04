@@ -1,43 +1,30 @@
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
 .Python
-*.so
-
-# Virtual environment
 venv/
 env/
-.venv/
+*.egg-info/
 
 # Django
-*.log
 db.sqlite3
+*.log
 staticfiles/
 media/
 
-# Environment variables — NEVER commit these
+# Secrets — NEVER commit these
 .env
 gee-service-account.json
 
-# ML model artefacts (too large for git)
-backend/ml/models/*.pkl
-backend/ml/models/*.h5
+# ML models — too large for git
+ml/models/*.pkl
+ml/models/*.h5
+ml/models/*.json
+
+# Data files — too large for git
+data/*.csv
 
 # VS Code
 .vscode/
-
-# Mac
-.DS_Store
-
-# Node.js (for frontend)
-node_modules/
-.next/
-frontend/.env.local
-
-# CSV data files
-backend/data/*.csv
-
-#GEE
-gee-service-account.json
