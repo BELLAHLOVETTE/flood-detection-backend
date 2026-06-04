@@ -40,7 +40,7 @@ class Command(BaseCommand):
         if options['all']:
             # Use default file paths
             base_dir = settings.BASE_DIR / 'data'
-            rainfall_path = base_dir / 'maga_chirps_daily_2015_2024.csv'
+            rainfall_path = base_dir / 'maga_chirps_daily_2000_2025.csv'
             lagoon_path   = base_dir / 'maga_lagoon_monthly_2015_2024.csv'
 
             if rainfall_path.exists():
