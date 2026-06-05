@@ -1,0 +1,1 @@
+web: python manage.py migrate --settings=config.settings.production && daphne -b 0.0.0.0 -p $PORT config.asgi:application
