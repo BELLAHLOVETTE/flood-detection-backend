@@ -1,27 +1,29 @@
 FROM python:3.11-slim
 
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DJANGO_SETTINGS_MODULE=config.settings.production
+
+# Set work directory
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
+    build-essential \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements-prod.txt .
-RUN pip install --no-cache-dir -r requirements-prod.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements-prod.txt
 
-# Copy all application code
+# Copy project
 COPY . .
-
-# Collect static files for production
-RUN python manage.py collectstatic --noinput \
-    --settings=config.settings.production \
-    || true
 
 # Expose port
 EXPOSE 8000
-
-# Start command — migrate then start daphne
-CMD sh -c "python manage.py migrate --settings=config.settings.production && daphne -b 0.0.0.0 -p ${PORT:-8000} config.asgi:application"

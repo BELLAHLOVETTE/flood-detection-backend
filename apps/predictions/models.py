@@ -252,3 +252,70 @@ class MLModel(models.Model):
     def get_active(cls):
         """Get the currently active model for inference."""
         return cls.objects.filter(is_active=True).first()
+
+
+class RainfallForecast(models.Model):
+    """
+    Stores the 7-day rainfall and flood risk forecast.
+    Generated daily from CHIRPS seasonal climatology data.
+    """
+
+    RISK_CHOICES = [
+        ('low',      'Low'),
+        ('medium',   'Medium'),
+        ('high',     'High'),
+        ('critical', 'Critical'),
+    ]
+
+    forecast_date = models.DateField(
+        db_index=True,
+        help_text="The date this forecast is for"
+    )
+    predicted_mm = models.FloatField(
+        default=0.0,
+        help_text="Predicted rainfall in mm for this day"
+    )
+    risk_level = models.CharField(
+        max_length=10,
+        choices=RISK_CHOICES,
+        default='low'
+    )
+    flood_probability = models.FloatField(
+        default=0.0,
+        help_text="ML-estimated flood probability 0.0 to 1.0"
+    )
+    source = models.CharField(
+        max_length=100,
+        default='CHIRPS-seasonal'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['forecast_date']
+        unique_together = ('forecast_date', 'source')
+        verbose_name = 'Rainfall Forecast'
+        verbose_name_plural = 'Rainfall Forecasts'
+
+    def __str__(self):
+        return f"Forecast {self.forecast_date}: {self.predicted_mm}mm — {self.risk_level}"
+
+    @classmethod
+    def get_7day_forecast(cls):
+        """Return the next 7 days of forecast starting from today."""
+        from django.utils import timezone
+        today = timezone.now().date()
+        return cls.objects.filter(
+            forecast_date__gte=today
+        ).order_by('forecast_date')[:7]
+
+    @staticmethod
+    def mm_to_risk(mm):
+        """Convert predicted mm of rainfall to a risk level string."""
+        if mm >= 80:
+            return 'critical'
+        elif mm >= 50:
+            return 'high'
+        elif mm >= 25:
+            return 'medium'
+        else:
+            return 'low'
