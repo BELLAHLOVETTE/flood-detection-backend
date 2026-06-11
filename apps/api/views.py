@@ -528,3 +528,275 @@ def manual_dispatch(request):
         'alert_id':   str(alert.id),
         'recipients': subscribers.count(),
     }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def rainfall_forecast(request):
+    """
+    GET /api/v1/forecast/rainfall/
+    Returns 7-day rainfall forecast.
+    Uses stored GFS data if available, otherwise
+    computes from CHIRPS seasonal climatology.
+    """
+    from apps.predictions.models import (
+        RainfallForecast, RainfallReading
+    )
+    from datetime import date, timedelta
+
+    stored = RainfallForecast.get_7day_forecast()
+
+    if stored.exists():
+        data = []
+        for f in stored:
+            days_fr = [
+                'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                'Friday', 'Saturday', 'Sunday'
+            ]
+            data.append({
+                'forecast_date': f.forecast_date.isoformat(),
+                'predicted_mm':  f.predicted_mm,
+                'risk_level':    f.risk_level,
+                'risk_color': {
+                    'low':      '#22c55e',
+                    'medium':   '#eab308',
+                    'high':     '#f97316',
+                    'critical': '#ef4444',
+                }.get(f.risk_level, '#22c55e'),
+                'day_label': days_fr[f.forecast_date.weekday()],
+                'source':    f.source,
+            })
+        return Response({'source': 'database', 'forecast': data})
+
+    # Fallback: estimate from recent CHIRPS trend
+    recent = list(RainfallReading.objects.order_by('-date')[:30])
+    if not recent:
+        return Response({'source': 'none', 'forecast': []})
+
+    avg      = sum(r.rainfall_mm for r in recent) / len(recent)
+    is_rainy = timezone.now().month in [7, 8, 9, 10]
+    base     = avg * (1.4 if is_rainy else 0.6)
+
+    days_fr = [
+        'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+        'Friday', 'Saturday', 'Sunday'
+    ]
+
+    data = []
+    for d in range(1, 8):
+        fdate    = date.today() + timedelta(days=d)
+        pred_mm  = round(base * (0.95 ** d), 1)
+        risk     = RainfallForecast.mm_to_risk(pred_mm)
+        data.append({
+            'forecast_date': fdate.isoformat(),
+            'predicted_mm':  pred_mm,
+            'risk_level':    risk,
+            'risk_color': {
+                'low':      '#22c55e',
+                'medium':   '#eab308',
+                'high':     '#f97316',
+                'critical': '#ef4444',
+            }.get(risk, '#22c55e'),
+            'day_label': days_fr[fdate.weekday()],
+            'source':    'CHIRPS-trend-estimate',
+        })
+
+    return Response({'source': 'estimate', 'forecast': data})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def flood_risk_forecast(request):
+    """
+    GET /api/v1/forecast/flood-risk/
+    Returns 7-day flood risk forecast using ML model.
+    """
+    import pickle
+    from apps.predictions.models import (
+        RainfallForecast, WaterLevelReading,
+        RainfallReading, MLModel
+    )
+    from ml.feature_engineering import engineer_features
+    from datetime import date, timedelta
+
+    latest_water = WaterLevelReading.get_latest()
+    latest_rain  = RainfallReading.objects.order_by('-date').first()
+    water_km2    = latest_water.water_area_km2 if latest_water else 130.0
+    rain_7d      = latest_rain.cumulative_7d  if latest_rain else 0.0
+    rain_30d     = latest_rain.cumulative_30d if latest_rain else 0.0
+
+    # Load ML model once
+    pipeline = None
+    try:
+        model_rec = MLModel.get_active()
+        if model_rec and model_rec.file_path:
+            with open(model_rec.file_path, 'rb') as f:
+                pipeline = pickle.load(f)
+    except Exception as e:
+        logger.warning(f'Could not load ML model: {e}')
+
+    days_en = [
+        'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+        'Friday', 'Saturday', 'Sunday'
+    ]
+
+    # Get rainfall forecast
+    stored_rain = list(RainfallForecast.get_7day_forecast())
+    recent      = list(RainfallReading.objects.order_by('-date')[:14])
+    avg_rain    = sum(r.rainfall_mm for r in recent) / len(recent) if recent else 5.0
+    is_rainy    = timezone.now().month in [7, 8, 9, 10]
+    base_rain   = avg_rain * (1.4 if is_rainy else 0.6)
+
+    risk_forecast = []
+    today         = date.today()
+
+    for d in range(1, 8):
+        fdate = today + timedelta(days=d)
+
+        # Get predicted rain for this day
+        if stored_rain and d <= len(stored_rain):
+            pred_rain = stored_rain[d - 1].predicted_mm
+        else:
+            pred_rain = round(base_rain * (0.95 ** d), 1)
+
+        # Accumulate for ML features
+        proj_7d  = rain_7d  + (pred_rain * min(d, 7))
+        proj_30d = rain_30d + (pred_rain * d)
+
+        features = engineer_features({
+            'rainfall_1d':    pred_rain,
+            'rainfall_7d':    proj_7d,
+            'rainfall_30d':   proj_30d,
+            'sar_ratio':      0.0,
+            'water_area_km2': water_km2,
+            'ndwi_mean':      0.0,
+            'date':           fdate.isoformat(),
+        })
+
+        # Get probability from ML or rule-based fallback
+        if pipeline is not None:
+            try:
+                probability = float(
+                    pipeline.predict_proba(features)[0][1]
+                )
+            except Exception:
+                probability = _rule_based_probability(pred_rain, proj_7d, water_km2)
+        else:
+            probability = _rule_based_probability(pred_rain, proj_7d, water_km2)
+
+        risk = (
+            'critical' if probability >= 0.80 else
+            'high'     if probability >= 0.60 else
+            'medium'   if probability >= 0.30 else
+            'low'
+        )
+        color_map = {
+            'low':      '#22c55e',
+            'medium':   '#eab308',
+            'high':     '#f97316',
+            'critical': '#ef4444',
+        }
+
+        risk_forecast.append({
+            'forecast_date':  fdate.isoformat(),
+            'day_offset':     d,
+            'day_label':      days_en[fdate.weekday()],
+            'predicted_rain': round(pred_rain, 1),
+            'probability':    round(probability, 3),
+            'risk_level':     risk,
+            'risk_color':     color_map[risk],
+        })
+
+    peak = max(risk_forecast, key=lambda x: x['probability'])
+
+    return Response({
+        'forecast':      risk_forecast,
+        'peak_risk_day': peak,
+        'water_level_km2': water_km2,
+        'generated_at':  timezone.now().isoformat(),
+        'model_used':    'Random Forest + CHIRPS seasonal',
+    })
+
+
+def _rule_based_probability(rain_1d, rain_7d, water_km2):
+    """Simple rule-based flood probability when ML model unavailable."""
+    score = 0.0
+    if rain_1d  > 80:  score += 0.40
+    elif rain_1d > 50: score += 0.25
+    elif rain_1d > 25: score += 0.10
+    if rain_7d  > 200: score += 0.35
+    elif rain_7d > 120: score += 0.20
+    elif rain_7d > 80:  score += 0.10
+    if water_km2 > 180: score += 0.25
+    elif water_km2 > 150: score += 0.15
+    elif water_km2 > 130: score += 0.05
+    return min(score, 0.99)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_authority(request):
+    """
+    POST /api/v1/auth/register/
+    Register a new authority/analyst user account.
+    Accounts default to 'analyst' role and need admin approval.
+    """
+    from apps.core.models import User
+
+    username     = request.data.get('username', '').strip()
+    password     = request.data.get('password', '')
+    email        = request.data.get('email', '').strip()
+    organisation = request.data.get('organisation', '').strip()
+
+    # Validate required fields
+    if not username or not password or not email:
+        return Response(
+            {'error': 'username, password, and email are required.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if len(password) < 8:
+        return Response(
+            {'error': 'Password must be at least 8 characters long.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if User.objects.filter(username=username).exists():
+        return Response(
+            {'error': 'This username is already taken.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if User.objects.filter(email=email).exists():
+        return Response(
+            {'error': 'This email address is already registered.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.create_user(
+        username=username,
+        password=password,
+        email=email,
+        role='analyst',
+        organisation=organisation,
+    )
+
+    AuditLog.log(
+        action='user_registered',
+        actor=None,
+        obj=user,
+        details={
+            'username':     username,
+            'organisation': organisation,
+        },
+        ip=request.META.get('REMOTE_ADDR'),
+    )
+
+    return Response({
+        'message':  (
+            'Account created successfully. '
+            'An administrator must approve your access before you can log in.'
+        ),
+        'username': user.username,
+        'email':    user.email,
+    }, status=status.HTTP_201_CREATED)

@@ -123,4 +123,11 @@ urlpatterns = [
         TokenRefreshView.as_view(),
         name='token-refresh'
     ),
+
+    # Forecast endpoints
+path('forecast/rainfall/',    views.rainfall_forecast,    name='forecast-rainfall'),
+path('forecast/flood-risk/',  views.flood_risk_forecast,  name='forecast-flood-risk'),
+
+# Auth — register
+path('auth/register/',        views.register_authority,   name='register'),
 ]
