@@ -27,3 +27,5 @@ COPY . .
 
 # Expose port
 EXPOSE 8000
+
+CMD sh -c "python manage.py migrate --settings=config.settings.production && daphne -b 0.0.0.0 -p ${PORT:-8000} config.asgi:application"
