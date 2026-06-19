@@ -5,7 +5,8 @@
         "dockerfilePath": "Dockerfile"
     },
     "deploy": {
-        "start": "python manage.py migrate --settings=config.settings.production && daphne -b 0.0.0.0 -p $PORT config.asgi:application",
-        "restartPolicyType": "ON_FAILURE"
+        "startCommand": "python manage.py migrate --settings=config.settings.production && daphne -b 0.0.0.0 -p $PORT config.asgi:application",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
     }
 }
