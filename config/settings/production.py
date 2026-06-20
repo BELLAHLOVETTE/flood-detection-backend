@@ -52,22 +52,34 @@ SECURE_SSL_REDIRECT         = env.bool('SECURE_SSL_REDIRECT', default=False)
 # --- SYSTEM COMMUNICATIONS ---
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-# --- GOOGLE EARTH ENGINE (GEE) AUTHENTICATION ---
-GEE_SERVICE_ACCOUNT_EMAIL   = env('GEE_SERVICE_ACCOUNT_EMAIL', default='')
-GEE_PROJECT_ID              = env('GEE_PROJECT_ID', default='')
+# ── GOOGLE EARTH ENGINE — DEFENSIVE LOADING ──────────────────────────────────
+GEE_SERVICE_ACCOUNT_EMAIL = env('GEE_SERVICE_ACCOUNT_EMAIL', default='')
+GEE_PROJECT_ID            = env('GEE_PROJECT_ID', default='')
+GEE_SERVICE_ACCOUNT_KEY_PATH = env(
+    'GEE_SERVICE_ACCOUNT_KEY_PATH',
+    default=str(BASE_DIR / 'gee-service-account.json')
+)
 
 _GEE_JSON_CONTENT = env('GEE_SERVICE_ACCOUNT_JSON', default='')
 if _GEE_JSON_CONTENT:
-    _tmp_file = tempfile.NamedTemporaryFile(
-        mode='w',
-        suffix='.json',
-        delete=False
-    )
-    _tmp_file.write(_GEE_JSON_CONTENT)
-    _tmp_file.close()
-    GEE_SERVICE_ACCOUNT_KEY_PATH = _tmp_file.name
-else:
-    GEE_SERVICE_ACCOUNT_KEY_PATH = env(
-        'GEE_SERVICE_ACCOUNT_KEY_PATH',
-        default=str(BASE_DIR / 'gee-service-account.json')
-    )
+    try:
+        import json as _json
+        import tempfile as _tempfile
+
+        # Validate it is actually valid JSON before writing it anywhere
+        _json.loads(_GEE_JSON_CONTENT)
+
+        _tmp_file = _tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False
+        )
+        _tmp_file.write(_GEE_JSON_CONTENT)
+        _tmp_file.close()
+        GEE_SERVICE_ACCOUNT_KEY_PATH = _tmp_file.name
+    except Exception as _gee_err:
+        # NEVER let this crash the entire Django app at import time.
+        # Just log it and fall back to the default file path.
+        import sys
+        print(
+            f"WARNING: GEE_SERVICE_ACCOUNT_JSON could not be parsed: {_gee_err}",
+            file=sys.stderr
+        )
