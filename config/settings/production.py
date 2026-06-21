@@ -3,29 +3,33 @@ import os
 import json
 import tempfile
 from .base import *
+import sys
 
-DEBUG = False
+_database_url = env('DATABASE_URL', default='')
 
-# Fallback safely to prevent app crashing if ALLOWED_HOSTS is not fully parsed yet
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
+print(f"DEBUG: DATABASE_URL raw value starts with: {_database_url[:15]}...", file=sys.stderr)
 
-# --- DATABASE SETUP ---
-# Look for DATABASE_URL. If completely missing during a dry-run or initial build stage, 
-# fall back to an empty dummy configuration instead of crashing the entire setup.
-DATABASE_URL = env('DATABASE_URL', default=None)
+if not _database_url:
+    print(
+        "FATAL: DATABASE_URL environment variable is not set! "
+        "The application cannot start without a database connection.",
+        file=sys.stderr
+    )
+    sys.exit(1)
 
-if DATABASE_URL:
-    DATABASES = {
-        'default': env.db('DATABASE_URL')
-    }
-else:
-    # Safe temporary fallback configuration to keep the container building
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+if not _database_url.startswith('postgres'):
+    print(
+        f"FATAL: DATABASE_URL does not point to PostgreSQL! "
+        f"Got: {_database_url[:20]}... — refusing to start with SQLite in production.",
+        file=sys.stderr
+    )
+    sys.exit(1)
+
+DATABASES = {
+    'default': env.db('DATABASE_URL')
+}
+
+print(f"Database engine confirmed: {DATABASES['default']['ENGINE']}", file=sys.stderr)
 
 # --- STATIC FILES ---
 STATIC_ROOT = BASE_DIR / 'staticfiles'
