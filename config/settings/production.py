@@ -56,6 +56,14 @@ SECURE_SSL_REDIRECT         = env.bool('SECURE_SSL_REDIRECT', default=False)
 # --- SYSTEM COMMUNICATIONS ---
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
+CSRF_TRUSTED_ORIGINS = env.list(
+    'CSRF_TRUSTED_ORIGINS',
+    default=[
+        'https://githubrepobackend-production.up.railway.app',
+        'https://*.railway.app',
+    ]
+)
+
 # ── GOOGLE EARTH ENGINE — DEFENSIVE LOADING ──────────────────────────────────
 GEE_SERVICE_ACCOUNT_EMAIL = env('GEE_SERVICE_ACCOUNT_EMAIL', default='')
 GEE_PROJECT_ID            = env('GEE_PROJECT_ID', default='')
