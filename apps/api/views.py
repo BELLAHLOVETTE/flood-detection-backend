@@ -529,7 +529,6 @@ def manual_dispatch(request):
         'recipients': subscribers.count(),
     }, status=status.HTTP_201_CREATED)
 
-
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def flood_risk_forecast(request):
@@ -538,17 +537,19 @@ def flood_risk_forecast(request):
     Returns 7-day flood risk forecast using ML model + seasonal climatology.
     """
     import pickle
-    from apps.predictions.models import (
-        RainfallForecast, WaterLevelReading,
-        RainfallReading, MLModel
-    )
+    import logging
     from django.utils import timezone
     from datetime import date, timedelta
+    from apps.predictions.models import (
+        WaterLevelReading, RainfallReading, MLModel
+    )
+    from ml.feature_engineering import engineer_features
+
+    logger = logging.getLogger(__name__)
 
     latest_water = WaterLevelReading.get_latest()
     water_km2    = latest_water.water_area_km2 if latest_water else 130.0
 
-    # Load ML model once
     pipeline = None
     try:
         model_rec = MLModel.get_active()
@@ -564,12 +565,7 @@ def flood_risk_forecast(request):
     ]
 
     today = date.today()
-
-    # Use SEASONAL CLIMATOLOGY based on actual calendar day-of-year,
-    # not the stale tail-end of the historical CSV. This correctly
-    # reflects "what does rainfall normally look like on this date
-    # historically" regardless of when the CSV data physically ends.
-    risk_forecast = []
+    risk_forecast    = []
     rain_7d_running  = 0.0
     rain_30d_running = 0.0
 
@@ -577,11 +573,7 @@ def flood_risk_forecast(request):
         fdate = today + timedelta(days=d)
         doy   = fdate.timetuple().tm_yday
 
-        # Pull historical average rainfall for this exact day-of-year
-        # across all years in the dataset (±10 day window)
-        historical_matches = RainfallReading.objects.filter(
-            date__week_day__isnull=False
-        ).extra(
+        historical_matches = RainfallReading.objects.extra(
             where=["EXTRACT(doy FROM date) BETWEEN %s AND %s"],
             params=[max(1, doy - 10), min(366, doy + 10)]
         )
@@ -593,7 +585,6 @@ def flood_risk_forecast(request):
                 1
             )
         else:
-            # Hard fallback if even seasonal lookup fails
             is_rainy  = fdate.month in [7, 8, 9, 10]
             pred_rain = 15.0 if is_rainy else 2.0
 
