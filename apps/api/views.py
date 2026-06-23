@@ -532,98 +532,21 @@ def manual_dispatch(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
-def rainfall_forecast(request):
-    """
-    GET /api/v1/forecast/rainfall/
-    Returns 7-day rainfall forecast.
-    Uses stored GFS data if available, otherwise
-    computes from CHIRPS seasonal climatology.
-    """
-    from apps.predictions.models import (
-        RainfallForecast, RainfallReading
-    )
-    from datetime import date, timedelta
-
-    stored = RainfallForecast.get_7day_forecast()
-
-    if stored.exists():
-        data = []
-        for f in stored:
-            days_fr = [
-                'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-                'Friday', 'Saturday', 'Sunday'
-            ]
-            data.append({
-                'forecast_date': f.forecast_date.isoformat(),
-                'predicted_mm':  f.predicted_mm,
-                'risk_level':    f.risk_level,
-                'risk_color': {
-                    'low':      '#22c55e',
-                    'medium':   '#eab308',
-                    'high':     '#f97316',
-                    'critical': '#ef4444',
-                }.get(f.risk_level, '#22c55e'),
-                'day_label': days_fr[f.forecast_date.weekday()],
-                'source':    f.source,
-            })
-        return Response({'source': 'database', 'forecast': data})
-
-    # Fallback: estimate from recent CHIRPS trend
-    recent = list(RainfallReading.objects.order_by('-date')[:30])
-    if not recent:
-        return Response({'source': 'none', 'forecast': []})
-
-    avg      = sum(r.rainfall_mm for r in recent) / len(recent)
-    is_rainy = timezone.now().month in [7, 8, 9, 10]
-    base     = avg * (1.4 if is_rainy else 0.6)
-
-    days_fr = [
-        'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-        'Friday', 'Saturday', 'Sunday'
-    ]
-
-    data = []
-    for d in range(1, 8):
-        fdate    = date.today() + timedelta(days=d)
-        pred_mm  = round(base * (0.95 ** d), 1)
-        risk     = RainfallForecast.mm_to_risk(pred_mm)
-        data.append({
-            'forecast_date': fdate.isoformat(),
-            'predicted_mm':  pred_mm,
-            'risk_level':    risk,
-            'risk_color': {
-                'low':      '#22c55e',
-                'medium':   '#eab308',
-                'high':     '#f97316',
-                'critical': '#ef4444',
-            }.get(risk, '#22c55e'),
-            'day_label': days_fr[fdate.weekday()],
-            'source':    'CHIRPS-trend-estimate',
-        })
-
-    return Response({'source': 'estimate', 'forecast': data})
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
 def flood_risk_forecast(request):
     """
     GET /api/v1/forecast/flood-risk/
-    Returns 7-day flood risk forecast using ML model.
+    Returns 7-day flood risk forecast using ML model + seasonal climatology.
     """
     import pickle
     from apps.predictions.models import (
         RainfallForecast, WaterLevelReading,
         RainfallReading, MLModel
     )
-    from ml.feature_engineering import engineer_features
+    from django.utils import timezone
     from datetime import date, timedelta
 
     latest_water = WaterLevelReading.get_latest()
-    latest_rain  = RainfallReading.objects.order_by('-date').first()
     water_km2    = latest_water.water_area_km2 if latest_water else 130.0
-    rain_7d      = latest_rain.cumulative_7d  if latest_rain else 0.0
-    rain_30d     = latest_rain.cumulative_30d if latest_rain else 0.0
 
     # Load ML model once
     pipeline = None
@@ -640,49 +563,60 @@ def flood_risk_forecast(request):
         'Friday', 'Saturday', 'Sunday'
     ]
 
-    # Get rainfall forecast
-    stored_rain = list(RainfallForecast.get_7day_forecast())
-    recent      = list(RainfallReading.objects.order_by('-date')[:14])
-    avg_rain    = sum(r.rainfall_mm for r in recent) / len(recent) if recent else 5.0
-    is_rainy    = timezone.now().month in [7, 8, 9, 10]
-    base_rain   = avg_rain * (1.4 if is_rainy else 0.6)
+    today = date.today()
 
+    # Use SEASONAL CLIMATOLOGY based on actual calendar day-of-year,
+    # not the stale tail-end of the historical CSV. This correctly
+    # reflects "what does rainfall normally look like on this date
+    # historically" regardless of when the CSV data physically ends.
     risk_forecast = []
-    today         = date.today()
+    rain_7d_running  = 0.0
+    rain_30d_running = 0.0
 
     for d in range(1, 8):
         fdate = today + timedelta(days=d)
+        doy   = fdate.timetuple().tm_yday
 
-        # Get predicted rain for this day
-        if stored_rain and d <= len(stored_rain):
-            pred_rain = stored_rain[d - 1].predicted_mm
+        # Pull historical average rainfall for this exact day-of-year
+        # across all years in the dataset (±10 day window)
+        historical_matches = RainfallReading.objects.filter(
+            date__week_day__isnull=False
+        ).extra(
+            where=["EXTRACT(doy FROM date) BETWEEN %s AND %s"],
+            params=[max(1, doy - 10), min(366, doy + 10)]
+        )
+
+        if historical_matches.exists():
+            pred_rain = round(
+                sum(r.rainfall_mm for r in historical_matches) /
+                historical_matches.count(),
+                1
+            )
         else:
-            pred_rain = round(base_rain * (0.95 ** d), 1)
+            # Hard fallback if even seasonal lookup fails
+            is_rainy  = fdate.month in [7, 8, 9, 10]
+            pred_rain = 15.0 if is_rainy else 2.0
 
-        # Accumulate for ML features
-        proj_7d  = rain_7d  + (pred_rain * min(d, 7))
-        proj_30d = rain_30d + (pred_rain * d)
+        rain_7d_running  += pred_rain
+        rain_30d_running += pred_rain
 
         features = engineer_features({
             'rainfall_1d':    pred_rain,
-            'rainfall_7d':    proj_7d,
-            'rainfall_30d':   proj_30d,
+            'rainfall_7d':    rain_7d_running,
+            'rainfall_30d':   rain_30d_running,
             'sar_ratio':      0.0,
             'water_area_km2': water_km2,
             'ndwi_mean':      0.0,
             'date':           fdate.isoformat(),
         })
 
-        # Get probability from ML or rule-based fallback
         if pipeline is not None:
             try:
-                probability = float(
-                    pipeline.predict_proba(features)[0][1]
-                )
+                probability = float(pipeline.predict_proba(features)[0][1])
             except Exception:
-                probability = _rule_based_probability(pred_rain, proj_7d, water_km2)
+                probability = _rule_based_probability(pred_rain, rain_7d_running, water_km2)
         else:
-            probability = _rule_based_probability(pred_rain, proj_7d, water_km2)
+            probability = _rule_based_probability(pred_rain, rain_7d_running, water_km2)
 
         risk = (
             'critical' if probability >= 0.80 else
@@ -691,17 +625,15 @@ def flood_risk_forecast(request):
             'low'
         )
         color_map = {
-            'low':      '#22c55e',
-            'medium':   '#eab308',
-            'high':     '#f97316',
-            'critical': '#ef4444',
+            'low': '#22c55e', 'medium': '#eab308',
+            'high': '#f97316', 'critical': '#ef4444',
         }
 
         risk_forecast.append({
             'forecast_date':  fdate.isoformat(),
             'day_offset':     d,
             'day_label':      days_en[fdate.weekday()],
-            'predicted_rain': round(pred_rain, 1),
+            'predicted_rain': pred_rain,
             'probability':    round(probability, 3),
             'risk_level':     risk,
             'risk_color':     color_map[risk],
@@ -710,11 +642,11 @@ def flood_risk_forecast(request):
     peak = max(risk_forecast, key=lambda x: x['probability'])
 
     return Response({
-        'forecast':      risk_forecast,
-        'peak_risk_day': peak,
+        'forecast':        risk_forecast,
+        'peak_risk_day':   peak,
         'water_level_km2': water_km2,
-        'generated_at':  timezone.now().isoformat(),
-        'model_used':    'Random Forest + CHIRPS seasonal',
+        'generated_at':    timezone.now().isoformat(),
+        'model_used':      'Random Forest + CHIRPS seasonal climatology',
     })
 
 
