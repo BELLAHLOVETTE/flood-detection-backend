@@ -27,7 +27,7 @@ FEATURE_NAMES = [
 ]
 
 # Historical constants for Maga region
-BASELINE_WATER_KM2    = 130.0   # Lake Maga historical mean area
+BASELINE_WATER_KM2 = 38.0  # Calibrated from actual JRC water_area_m2 data (2015-2021 average)  # Lake Maga historical mean area
 MEAN_30D_RAINFALL_MM  = 85.0    # Mean 30-day cumulative (July-October)
 STD_30D_RAINFALL_MM   = 42.0    # Standard deviation
 

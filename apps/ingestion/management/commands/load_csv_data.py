@@ -219,7 +219,7 @@ class Command(BaseCommand):
         skipped_count = 0
         error_count   = 0
 
-        BASELINE_KM2 = 130.0  # Lake Maga historical baseline
+        BASELINE_KM2 = 38.0  # Lake Maga historical baseline
 
         with open(filepath, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)

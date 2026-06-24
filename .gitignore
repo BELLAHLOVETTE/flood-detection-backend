@@ -20,7 +20,6 @@ gee-service-account.json
 
 # ML models — too large for git
 ml/models/*.h5
-ml/models/*.json
 
 # VS Code
 .vscode/
