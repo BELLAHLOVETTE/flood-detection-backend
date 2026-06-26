@@ -539,7 +539,7 @@ def flood_risk_forecast(request):
     import pickle
     import logging
     from django.utils import timezone
-    from datetime import date, timedelta
+    from datetime import date, timedelta, datetime
     from apps.predictions.models import (
         WaterLevelReading, RainfallReading, MLModel
     )
@@ -564,7 +564,16 @@ def flood_risk_forecast(request):
         'Friday', 'Saturday', 'Sunday'
     ]
 
-    today = date.today()
+    # Allow overriding "today" for demo purposes via query parameter
+    # Usage: /api/v1/forecast/flood-risk/?demo_date=2026-08-20
+    demo_date_param = request.query_params.get('demo_date')
+    if demo_date_param:
+        try:
+            today = datetime.strptime(demo_date_param, '%Y-%m-%d').date()
+        except ValueError:
+            today = date.today()
+    else:
+        today = date.today()
     risk_forecast    = []
     rain_7d_running  = 0.0
     rain_30d_running = 0.0
