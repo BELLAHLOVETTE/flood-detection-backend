@@ -54,7 +54,9 @@ CSRF_COOKIE_SECURE          = True
 SECURE_SSL_REDIRECT         = env.bool('SECURE_SSL_REDIRECT', default=False)
 
 # --- SYSTEM COMMUNICATIONS ---
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_BACKEND      = 'sgbackend.SendgridBackend'
+SENDGRID_API_KEY   = env('SENDGRID_API_KEY', default='')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='')
 
 CSRF_TRUSTED_ORIGINS = env.list(
     'CSRF_TRUSTED_ORIGINS',
