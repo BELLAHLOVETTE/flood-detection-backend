@@ -36,3 +36,5 @@ twilio==8.13.0
 # Utils
 python-dateutil==2.9.0
 Pillow==11.0.0
+
+django-sendgrid-v5==1.2.3
