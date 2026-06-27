@@ -735,3 +735,28 @@ def register_authority(request):
         'username': user.username,
         'email':    user.email,
     }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_subscribers(request):
+    """
+    GET /api/v1/admin/subscribers/
+    Returns all subscribers plus summary stats. Admin only.
+    """
+    from apps.alerts.models import AlertSubscriber
+    from apps.api.serializers import AdminSubscriberSerializer
+
+    qs = AlertSubscriber.objects.all().order_by('-created_at')
+    serializer = AdminSubscriberSerializer(qs, many=True)
+
+    return Response({
+        'stats': {
+            'total':           AlertSubscriber.objects.count(),
+            'verified':        AlertSubscriber.objects.filter(is_verified=True).count(),
+            'active':          AlertSubscriber.objects.filter(is_active=True, is_verified=True).count(),
+            'email_reachable': AlertSubscriber.objects.filter(
+                                   preferred_channel__in=['email', 'both']
+                               ).exclude(email='').exclude(email__isnull=True).count(),
+        },
+        'subscribers': serializer.data,
+    })

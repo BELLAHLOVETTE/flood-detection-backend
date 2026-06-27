@@ -251,3 +251,29 @@ class ManualAlertSerializer(serializers.Serializer):
                   )
     message_fr  = serializers.CharField(max_length=500)
     message_en  = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    class AdminSubscriberSerializer(serializers.ModelSerializer):
+        masked_email = serializers.SerializerMethodField()
+        phone_display = serializers.SerializerMethodField()
+
+        class Meta:
+            from apps.alerts.models import AlertSubscriber
+            model = AlertSubscriber
+            fields = [
+                'id', 'masked_email', 'phone_display', 'preferred_channel',
+                'language', 'is_verified', 'is_active', 'subscription_area',
+                'last_alert_sent', 'created_at',
+            ]
+
+        def get_masked_email(self, obj):
+            if not obj.email:
+                return None
+            local, _, domain = obj.email.partition('@')
+            if len(local) <= 2:
+                masked = local[0] + '*'
+            else:
+                masked = local[0] + '*' * (len(local) - 2) + local[-1]
+            return f"{masked}@{domain}"
+
+        def get_phone_display(self, obj):
+            return f"•••• {obj.phone_last4}" if obj.phone_last4 else None

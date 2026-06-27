@@ -125,8 +125,10 @@ urlpatterns = [
     ),
 
     # Forecast endpoints
-path('forecast/flood-risk/',  views.flood_risk_forecast,  name='forecast-flood-risk'),
+    path('forecast/flood-risk/',  views.flood_risk_forecast,  name='forecast-flood-risk'),
 
-# Auth — register
-path('auth/register/',        views.register_authority,   name='register'),
+    # Auth — register
+    path('auth/register/',        views.register_authority,   name='register'),
+
+    path('admin/subscribers/', views.admin_subscribers, name='admin-subscribers'),
 ]
