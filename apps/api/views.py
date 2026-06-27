@@ -520,13 +520,16 @@ def manual_dispatch(request):
         ip      = request.META.get('REMOTE_ADDR'),
     )
 
-    # TODO: Trigger Celery task to send SMS/email
-    # dispatch_flood_alert.delay(str(alert.id))
+    from apps.alerts.tasks import dispatch_alert_to_subscribers
+    result = dispatch_alert_to_subscribers(str(alert.id))
 
     return Response({
-        'message':    f"Alert dispatched to {subscribers.count()} subscribers.",
+        'success':    True,
         'alert_id':   str(alert.id),
-        'recipients': subscribers.count(),
+        'recipients': result['total'],
+        'email_sent': result['email_sent'],
+        'sms_sent':   result['sms_sent'],
+        'message':    f"Alert dispatched to {result['email_sent']} subscriber(s) by email.",
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['GET'])
