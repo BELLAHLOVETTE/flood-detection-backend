@@ -80,7 +80,7 @@ class Command(BaseCommand):
 
         # Carry forward the previous level if one exists
         prev = RiskAssessment.objects.order_by('-assessed_at').first()
-        previous_level = prev.risk_level if prev else None
+        previous_level = prev.risk_level if prev else risk_level
 
         assessment = RiskAssessment.objects.create(
             assessed_at         = timezone.now(),
