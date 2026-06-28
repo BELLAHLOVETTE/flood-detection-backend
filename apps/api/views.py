@@ -101,15 +101,15 @@ def rainfall_series(request):
     """
     GET /api/v1/rainfall/?days=90
 
-    Returns daily rainfall readings for the last N days.
-    Used by the rainfall line chart on the dashboard.
-    Default is 90 days. Maximum is 365 days.
+    Returns the most recent N daily rainfall readings that exist
+    in the database, newest first. Anchored to the latest available
+    reading (not today), so it always returns real data even when
+    the dataset ends in the past.
     """
-    days   = int(request.query_params.get('days', 90))
-    days   = min(days, 365)
-    cutoff = timezone.now().date() - timedelta(days=days)
+    days = int(request.query_params.get('days', 90))
+    days = min(days, 365)
 
-    readings   = RainfallReading.objects.filter(date__gte=cutoff)
+    readings = RainfallReading.objects.order_by('-date')[:days]
     serializer = RainfallReadingSerializer(readings, many=True)
     return Response(serializer.data)
 
@@ -122,14 +122,15 @@ def water_level_series(request):
     """
     GET /api/v1/water-level/?days=90
 
-    Returns Lake Maga water level readings.
-    Used by the water level gauge on the dashboard.
+    Returns the most recent water level readings that exist,
+    newest first. Anchored to the latest available reading
+    (not today) so it returns real data even when the dataset
+    ends in the past.
     """
-    days   = int(request.query_params.get('days', 90))
-    days   = min(days, 365)
-    cutoff = timezone.now().date() - timedelta(days=days)
+    days = int(request.query_params.get('days', 90))
+    days = min(days, 365)
 
-    readings   = WaterLevelReading.objects.filter(date__gte=cutoff)
+    readings = WaterLevelReading.objects.order_by('-date')[:days]
     serializer = WaterLevelSerializer(readings, many=True)
     return Response(serializer.data)
 
