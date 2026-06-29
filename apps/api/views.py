@@ -715,6 +715,7 @@ def register_authority(request):
         email=email,
         role='analyst',
         organisation=organisation,
+        is_active=False,   # requires admin approval before first login
     )
 
     AuditLog.log(
