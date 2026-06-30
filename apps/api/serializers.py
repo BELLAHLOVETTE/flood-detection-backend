@@ -277,3 +277,44 @@ class ManualAlertSerializer(serializers.Serializer):
 
         def get_phone_display(self, obj):
             return f"•••• {obj.phone_last4}" if obj.phone_last4 else None
+
+class AdminSubscriberSerializer(serializers.ModelSerializer):
+    """
+    Admin-facing subscriber view. Masks email and shows only
+    the last 4 phone digits for privacy.
+    """
+    masked_email = serializers.SerializerMethodField()
+    phone_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AlertSubscriber
+        fields = [
+            'id',
+            'masked_email',
+            'phone_display',
+            'preferred_channel',
+            'language',
+            'subscription_area',
+            'is_verified',
+            'is_active',
+            'created_at',
+            'last_alert_sent',
+        ]
+
+    def get_masked_email(self, obj):
+        if not obj.email:
+            return None
+        parts = obj.email.split('@')
+        if len(parts) != 2:
+            return obj.email
+        name, domain = parts
+        if len(name) <= 2:
+            masked = name[0] + '*'
+        else:
+            masked = name[0] + '*' * (len(name) - 2) + name[-1]
+        return f'{masked}@{domain}'
+
+    def get_phone_display(self, obj):
+        if obj.phone_last4:
+            return f'••••{obj.phone_last4}'
+        return None
