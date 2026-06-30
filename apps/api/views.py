@@ -769,13 +769,13 @@ def password_reset_request(request):
     """
     POST /api/v1/auth/password-reset/
     Body: { "email": "user@example.com" }
-    Emails a reset link if the address belongs to a user.
+    Emails a branded reset link if the address belongs to a user.
     Always returns the same message (never reveals which emails exist).
     """
     from django.contrib.auth.tokens import default_token_generator
     from django.utils.http import urlsafe_base64_encode
     from django.utils.encoding import force_bytes
-    from django.core.mail import send_mail
+    from django.core.mail import EmailMultiAlternatives
     from django.conf import settings
     from apps.core.models import User
     import os
@@ -792,17 +792,83 @@ def password_reset_request(request):
         reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
 
         try:
-            send_mail(
-                subject='Flood-Watch — Password reset',
-                message=(
-                    f'You requested a password reset for your Flood-Watch account.\n\n'
-                    f'Click the link below to set a new password:\n{reset_link}\n\n'
-                    f'If you did not request this, you can safely ignore this email.'
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=False,
+            text_body = (
+                f'You requested a password reset for your Flood-Watch account.\n\n'
+                f'Open this link to set a new password:\n{reset_link}\n\n'
+                f'If you did not request this, you can safely ignore this email.'
             )
+
+            html_body = f"""\
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#eef6f7;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef6f7;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+               style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(10,52,56,0.08);">
+          <!-- header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0e7c8b,#0a5560);padding:32px;text-align:center;">
+              <div style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">
+                Flood-Watch
+              </div>
+              <div style="font-size:13px;color:#a9dde2;margin-top:4px;">
+                Cameroon — Flood Early Warning
+              </div>
+            </td>
+          </tr>
+          <!-- body -->
+          <tr>
+            <td style="padding:36px 36px 28px;">
+              <h1 style="margin:0 0 12px;font-size:20px;color:#0a5560;">Reset your password</h1>
+              <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#143438;">
+                You requested a password reset for your Flood-Watch account.
+                Click the button below to choose a new password.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  <td align="center" style="border-radius:10px;background:#0e7c8b;">
+                    <a href="{reset_link}"
+                       style="display:inline-block;padding:13px 32px;font-size:15px;font-weight:bold;
+                              color:#ffffff;text-decoration:none;border-radius:10px;">
+                      Reset password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:26px 0 0;font-size:12px;line-height:1.6;color:#5a6e70;">
+                If the button doesn't work, copy and paste this link into your browser:<br>
+                <a href="{reset_link}" style="color:#0e7c8b;word-break:break-all;">{reset_link}</a>
+              </p>
+              <p style="margin:20px 0 0;font-size:12px;color:#9aabac;">
+                If you did not request this, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+          <!-- footer -->
+          <tr>
+            <td style="background:#143438;padding:18px 36px;text-align:center;">
+              <div style="font-size:11px;color:#7f9799;">
+                Flood-Watch Cameroon · Maga Sub-Division · Far North
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+            msg = EmailMultiAlternatives(
+                subject='Flood-Watch — Reset your password',
+                body=text_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email],
+            )
+            msg.attach_alternative(html_body, "text/html")
+            msg.send()
         except Exception as e:
             logger.error(f'Password reset email failed: {e}')
     except User.DoesNotExist:
