@@ -221,7 +221,7 @@ def subscribe_alerts(request):
     POST /api/v1/alerts/subscribe/
 
     Registers a new subscriber for flood alerts.
-    Sends an OTP via SMS or email to verify the contact.
+    Sends an OTP via email to verify the contact.
 
     Request body:
     {
@@ -277,16 +277,73 @@ def subscribe_alerts(request):
         )
         created = True
 
-    # Generate and send OTP
+    # Generate OTP
     otp = sub.generate_otp()
-
-    # For now, print OTP to console (will use Twilio/SendGrid later)
-    # In production this triggers a Celery task to send SMS/email
     logger.info(f"OTP for subscriber {sub.id}: {otp}")
-    print(f"\n{'='*40}")
-    print(f"OTP CODE FOR TESTING: {otp}")
-    print(f"Subscriber ID: {sub.id}")
-    print(f"{'='*40}\n")
+
+    # Email the OTP if we have an email address
+    if email:
+        try:
+            from django.core.mail import EmailMultiAlternatives
+            from django.conf import settings
+
+            text_body = (
+                f'Your Flood-Watch verification code is: {otp}\n\n'
+                f'Enter this code to confirm your subscription to flood alerts for Maga.\n'
+                f'This code will expire shortly.\n\n'
+                f'If you did not request this, you can ignore this email.'
+            )
+
+            html_body = f"""\
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#eef6f7;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef6f7;padding:32px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(10,52,56,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#0e7c8b,#0a5560);padding:32px;text-align:center;">
+            <div style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">Flood-Watch</div>
+            <div style="font-size:13px;color:#a9dde2;margin-top:4px;">Cameroon — Flood Early Warning</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 36px 28px;text-align:center;">
+            <h1 style="margin:0 0 12px;font-size:20px;color:#0a5560;">Confirm your subscription</h1>
+            <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#143438;">
+              Enter this verification code to start receiving flood alerts for Maga.
+            </p>
+            <div style="display:inline-block;background:#eef6f7;border-radius:12px;padding:18px 36px;
+                        font-size:34px;font-weight:bold;letter-spacing:10px;color:#0a5560;">
+              {otp}
+            </div>
+            <p style="margin:24px 0 0;font-size:12px;color:#9aabac;">
+              This code expires shortly. If you didn't request it, you can ignore this email.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#143438;padding:18px 36px;text-align:center;">
+            <div style="font-size:11px;color:#7f9799;">Flood-Watch Cameroon · Maga Sub-Division · Far North</div>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+            msg = EmailMultiAlternatives(
+                subject='Flood-Watch — Your verification code',
+                body=text_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email],
+            )
+            msg.attach_alternative(html_body, "text/html")
+            msg.send()
+        except Exception as e:
+            logger.error(f"OTP email failed for subscriber {sub.id}: {e}")
 
     response_data = {
         'message':    'Code de vérification envoyé. (Verification code sent.)',
