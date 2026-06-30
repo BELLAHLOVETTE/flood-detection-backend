@@ -131,4 +131,6 @@ urlpatterns = [
     path('auth/register/',        views.register_authority,   name='register'),
 
     path('admin/subscribers/', views.admin_subscribers, name='admin-subscribers'),
+    path('auth/password-reset/', views.password_reset_request, name='password-reset'),
+    path('auth/password-reset-confirm/', views.password_reset_confirm, name='password-reset-confirm'),
 ]

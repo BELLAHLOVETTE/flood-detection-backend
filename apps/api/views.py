@@ -762,3 +762,89 @@ def admin_subscribers(request):
         },
         'subscribers': serializer.data,
     })
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    """
+    POST /api/v1/auth/password-reset/
+    Body: { "email": "user@example.com" }
+    Emails a reset link if the address belongs to a user.
+    Always returns the same message (never reveals which emails exist).
+    """
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.http import urlsafe_base64_encode
+    from django.utils.encoding import force_bytes
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from apps.core.models import User
+    import os
+
+    email = request.data.get('email', '').strip()
+    if not email:
+        return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(email=email)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        frontend_url = os.getenv('FRONTEND_URL', 'https://flood-detection-frontend-three.vercel.app')
+        reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+
+        try:
+            send_mail(
+                subject='Flood-Watch — Password reset',
+                message=(
+                    f'You requested a password reset for your Flood-Watch account.\n\n'
+                    f'Click the link below to set a new password:\n{reset_link}\n\n'
+                    f'If you did not request this, you can safely ignore this email.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            logger.error(f'Password reset email failed: {e}')
+    except User.DoesNotExist:
+        pass  # Silent — do not reveal whether the email is registered
+
+    return Response({'message': 'If that email is registered, a reset link has been sent.'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    """
+    POST /api/v1/auth/password-reset-confirm/
+    Body: { "uid": "...", "token": "...", "password": "newpass" }
+    Verifies the token and sets the new password.
+    """
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.http import urlsafe_base64_decode
+    from django.utils.encoding import force_str
+    from apps.core.models import User
+
+    uid = request.data.get('uid', '')
+    token = request.data.get('token', '')
+    password = request.data.get('password', '')
+
+    if not all([uid, token, password]):
+        return Response({'error': 'uid, token, and password are required.'},
+        status=status.HTTP_400_BAD_REQUEST)
+    if len(password) < 8:
+        return Response({'error': 'Password must be at least 8 characters.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user_pk = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_pk)
+    except (User.DoesNotExist, ValueError, TypeError):
+        return Response({'error': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not default_token_generator.check_token(user, token):
+        return Response({'error': 'This reset link is invalid or has expired.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(password)
+    user.save(update_fields=['password'])
+    return Response({'message': 'Password reset successfully. You can now sign in.'})
